@@ -35,7 +35,7 @@ class ConsumerRunnable(bootstrapServers: String, groupId: String, topic: String,
   }
 
   override def run(): Unit = {
-    Try(pollFunc).recover(_ => {
+    Try(pollFunc()).recover(_ => {
       logger.info("Received shutdown signal!")
       latch.countDown()
       consumer.close()
