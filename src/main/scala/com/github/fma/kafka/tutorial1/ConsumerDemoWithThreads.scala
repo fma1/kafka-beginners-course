@@ -4,10 +4,8 @@ import java.util.concurrent.CountDownLatch
 
 import org.slf4j.LoggerFactory
 
-class ConsumerDemoWithThreads {}
-
 object ConsumerDemoWithThreads extends App {
-  val logger = LoggerFactory.getLogger(classOf[ConsumerDemoWithThreads])
+  val logger = LoggerFactory.getLogger(getClass)
 
   val bootstrapServers = "127.0.0.1:9092"
   val groupId = "my-sixth-application"

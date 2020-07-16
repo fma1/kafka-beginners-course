@@ -6,10 +6,8 @@ import org.apache.kafka.clients.producer.{Callback, KafkaProducer, ProducerConfi
 import org.apache.kafka.common.serialization.StringSerializer
 import org.slf4j.LoggerFactory
 
-class ProducerDemoWithCallback {}
-
 object ProducerDemoWithCallback extends App {
-  val logger = LoggerFactory.getLogger(classOf[ProducerDemoWithCallback])
+  val logger = LoggerFactory.getLogger(getClass)
 
   val bootstrapServers = "127.0.0.1:9092"
   val callback = new Callback {

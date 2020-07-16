@@ -11,10 +11,8 @@ import scala.jdk.CollectionConverters._
 import scala.jdk.DurationConverters._
 import scala.language.postfixOps
 
-class ConsumerDemo {}
-
 object ConsumerDemo extends App {
-  val logger = LoggerFactory.getLogger(classOf[ConsumerDemo])
+  val logger = LoggerFactory.getLogger(getClass)
 
   val bootstrapServers = "127.0.0.1:9092"
   val groupId = "my-fourth-application"
