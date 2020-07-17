@@ -16,9 +16,16 @@
         <scala.version>2.13.2</scala.version>
         <kafka.version>2.5.0</kafka.version>
         <slf4j-simple.version>1.7.30</slf4j-simple.version>
+        <twitter4s.version>6.2</twitter4s.version>
     </properties>
 
     <dependencies>
+        <dependency>
+            <groupId>com.danielasfregola</groupId>
+            <artifactId>twitter4s_2.13</artifactId>
+            <version>${twitter4s.version}</version>
+        </dependency>
+
         <dependency>
             <groupId>org.apache.kafka</groupId>
             <artifactId>kafka-clients</artifactId>
