@@ -17,9 +17,26 @@
         <kafka.version>2.5.0</kafka.version>
         <slf4j-simple.version>1.7.30</slf4j-simple.version>
         <twitter4s.version>6.2</twitter4s.version>
+        <elasticsearch.version>7.2.0</elasticsearch.version>
+        <ujson.version>1.1.0</ujson.version>
     </properties>
 
     <dependencies>
+        <dependency>
+            <groupId>com.lihaoyi</groupId>
+            <artifactId>ujson_2.13</artifactId>
+            <version>${ujson.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.sksamuel.elastic4s</groupId>
+            <artifactId>elastic4s-client-esjava_2.13</artifactId>
+            <version>${elasticsearch.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.elasticsearch.client</groupId>
+            <artifactId>transport</artifactId>
+            <version>${elasticsearch.version}</version>
+        </dependency>
         <dependency>
             <groupId>com.danielasfregola</groupId>
             <artifactId>twitter4s_2.13</artifactId>
