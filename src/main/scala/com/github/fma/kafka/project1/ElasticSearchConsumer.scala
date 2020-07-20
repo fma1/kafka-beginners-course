@@ -3,95 +3,129 @@ package com.github.fma.kafka.project1
 import java.nio.file.{Files, Paths}
 import java.util.Properties
 import java.util.concurrent.Executors
+import java.lang.reflect.Type
 
+import com.danielasfregola.twitter4s.entities.Tweet
 import com.github.fma.kafka.project1.Constants._
-import com.sksamuel.elastic4s._
+import com.google.gson.{Gson, GsonBuilder}
+import com.google.gson.reflect.TypeToken
 import com.sksamuel.elastic4s.ElasticDsl._
+import com.sksamuel.elastic4s._
 import com.sksamuel.elastic4s.http.{JavaClient, NoOpRequestConfigCallback}
 import com.sksamuel.elastic4s.requests.searches.SearchResponse
 import org.apache.http.auth.{AuthScope, UsernamePasswordCredentials}
 import org.apache.http.impl.client.BasicCredentialsProvider
 import org.apache.http.impl.nio.client.HttpAsyncClientBuilder
-import org.apache.kafka.clients.consumer.KafkaConsumer
 import org.apache.kafka.clients.consumer.ConsumerConfig._
-import org.apache.kafka.common.serialization.StringSerializer
+import org.apache.kafka.clients.consumer.KafkaConsumer
+import org.apache.kafka.common.serialization.StringDeserializer
 import org.elasticsearch.client.RestClientBuilder.HttpClientConfigCallback
-import org.slf4j.LoggerFactory
+import org.json4s._
+import org.json4s.JObject
+import org.json4s.JsonAST.JString
+import org.json4s.native.Serialization
+import org.json4s.native.Serialization._
+import org.json4s.native.JsonMethods._
+import org.slf4j.{Logger, LoggerFactory}
 
-import scala.concurrent.{ExecutionContext, ExecutionContextExecutor, Future}
 import scala.concurrent.duration._
+import scala.concurrent.{ExecutionContext, ExecutionContextExecutor, Future}
 import scala.jdk.CollectionConverters._
 import scala.jdk.DurationConverters._
 import scala.language.postfixOps
 
-object ElasticSearchConsumer extends App {
-  val logger = LoggerFactory.getLogger(getClass)
+object ElasticSearchConsumer {
+  final val logger: Logger = LoggerFactory.getLogger(getClass)
 
-  implicit val executionContext: ExecutionContextExecutor =
-    ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor())
+  implicit val formats: DefaultFormats.type = DefaultFormats
 
-  val kafkaConsumerProps: Properties = {
-    val props = new Properties()
-    props.put(BOOTSTRAP_SERVERS_CONFIG, "127.0.0.1:9092")
-    props.put(KEY_DESERIALIZER_CLASS_CONFIG, classOf[StringSerializer].getName)
-    props.put(VALUE_DESERIALIZER_CLASS_CONFIG, classOf[StringSerializer].getName)
-    props
-  }
-  val consumer = new KafkaConsumer[String, String](kafkaConsumerProps)
+  def getCCParams(cc: AnyRef): Map[String, String] =
+    cc.getClass.getDeclaredFields.foldLeft(Map.empty[String, String]) { (a, f) =>
+      f.setAccessible(true)
+      a + (f.getName -> f.get(cc).toString)
+    }
 
-  lazy val elasticJsonAsByteArray= Files.readAllBytes(
-    Paths.get(getClass.getClassLoader.getResource("elasticsearch.json").toURI))
-  lazy val jsonData = ujson.read(ujson.Readable.fromByteArray(elasticJsonAsByteArray))
-  lazy val elasticUsername = jsonData.obj(ELASTIC_USERNAME).str
-  lazy val elasticPassword = jsonData.obj(ELASTIC_PASSWORD).str
-
-  val httpClientConfigCallback =  new HttpClientConfigCallback {
-    override def customizeHttpClient(httpClientBuilder: HttpAsyncClientBuilder): HttpAsyncClientBuilder = {
+  def createElasticClient(): ElasticClient = {
+    val elasticJsonString = Files.readAllLines(
+      Paths.get(getClass.getClassLoader.getResource("elasticsearch.json").toURI)).asScala.mkString("")
+    val jsonData = parse(elasticJsonString).asInstanceOf[JObject] match { case JObject(obj) => obj.toMap }
+    val elasticUsername: String = jsonData(ELASTIC_USERNAME) match { case JString(str) => str }
+    val elasticPassword: String = jsonData(ELASTIC_PASSWORD) match { case JString(str) => str }
+    val httpClientConfigCallback: HttpClientConfigCallback = (httpClientBuilder: HttpAsyncClientBuilder) => {
       val creds = new BasicCredentialsProvider()
       creds.setCredentials(AuthScope.ANY, new UsernamePasswordCredentials(elasticUsername, elasticPassword))
       httpClientBuilder.setDefaultCredentialsProvider(creds)
     }
+
+    ElasticClient(JavaClient(ElasticProperties(ELASTIC_URL), NoOpRequestConfigCallback, httpClientConfigCallback))
   }
 
-  val elasticClient = ElasticClient(
-    JavaClient(
-      ElasticProperties("https://kafka-poc-testing-6994796743.us-east-1.bonsaisearch.net:443"),
-      NoOpRequestConfigCallback,
-      httpClientConfigCallback
-    )
-  )
+  implicit val executionContext: ExecutionContextExecutor =
+    ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor())
 
-  elasticClient.execute {
-    bulk (
-      indexInto("twitter").fields("foo" -> "bar", "type" -> "tweet")
-    ).refreshImmediately
-  }.await
+  def createKafkaConsumer(topic: String): KafkaConsumer[String, String] = {
+    val bootstrapServers = "127.0.0.1:9092"
+    val groupId = "kafka-demo-elasticsearch"
 
-  val response: Response[SearchResponse] = elasticClient.execute {
-    search("twitter").matchQuery("foo", "bar")
-  }.await
+    val properties = new Properties()
+    properties.setProperty(BOOTSTRAP_SERVERS_CONFIG, bootstrapServers)
+    properties.setProperty(KEY_DESERIALIZER_CLASS_CONFIG, classOf[StringDeserializer].getName)
+    properties.setProperty(VALUE_DESERIALIZER_CLASS_CONFIG, classOf[StringDeserializer].getName)
+    properties.setProperty(GROUP_ID_CONFIG, groupId)
+    properties.setProperty(AUTO_OFFSET_RESET_CONFIG, "earliest")
 
-  response match {
-    case failure: RequestFailure => println(s"We failed: ${failure.error}")
-    case results: RequestSuccess[SearchResponse] => println(results.result.hits.hits.head)
-    case results: RequestSuccess[_] => println(results.result)
-    case _ => println("default case")
+    val consumer = new KafkaConsumer[String, String](properties)
+    consumer.subscribe(List(topic).asJava)
+
+    consumer
   }
 
-  consumer.subscribe(List(KAFKA_TOPIC).asJava)
-
+  /*
   scala.sys.addShutdownHook({ logger.info("Caught shutdown hook") })
 
-  Future {
-    while (true) {
-      val records = consumer.poll((100 milliseconds).toJava).asScala
 
-      for (record <- records) {
-        logger.info(s"Key: ${record.key()}, Value: ${record.value()}")
-        logger.info(s"Partition: ${record.partition()}, Offset: ${record.offset()}")
+   */
+
+  def main(args: Array[String]): Unit = {
+    val consumer = createKafkaConsumer(KAFKA_TOPIC)
+    val elasticClient = createElasticClient()
+
+      while (true) {
+        val records = consumer.poll((100 milliseconds).toJava).asScala
+
+        for (record <- records) {
+          println("test1")
+          val myType = new TypeToken[java.util.Map[String, String]]() {}.getType
+          println("test2")
+          val gson = new GsonBuilder().serializeNulls().enableComplexMapKeySerialization().create()
+          println("test3")
+          val tweetMap = gson.fromJson(record.value(), myType).asInstanceOf[java.util.Map[String, String]].asScala
+          println("test4")
+          val tweetId: String = tweetMap("id")
+          println("test5")
+
+          elasticClient.execute {
+            bulk (
+              indexInto("twitter").fields(tweetMap)
+            ).refreshImmediately
+          }.await
+
+          val response: Response[SearchResponse] = elasticClient.execute {
+            search("twitter").matchQuery("id", tweetId)
+          }.await
+
+          response match {
+            case failure: RequestFailure => println(s"We failed: ${failure.error}")
+            case results: RequestSuccess[SearchResponse] => println(results.result.hits.hits.head.id)
+            case results: RequestSuccess[_] => println(results.result)
+            case _ => println("default case")
+          }
+
+          System.exit(0)
+
+        }
+
       }
-    }
-  }
 
-  elasticClient.close()
+  }
 }
