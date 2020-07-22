@@ -85,7 +85,7 @@ object ElasticSearchConsumer {
         })
 
         val tweetIndexRequestLst =
-          tweetTupleLst.map { case (_, tweetMap) => indexInto(ELASTIC_INDEX).fields(tweetMap) }
+          tweetTupleLst.map { case (tweetId, tweetMap) => indexInto(ELASTIC_INDEX).id(tweetId).fields(tweetMap) }
 
         val tweetSearchRequestLst =
           tweetTupleLst.map { case (tweetId, _) => search(ELASTIC_INDEX).matchQuery("id", tweetId) }
