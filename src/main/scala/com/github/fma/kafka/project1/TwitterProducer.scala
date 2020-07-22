@@ -1,6 +1,6 @@
 package com.github.fma.kafka.project1
 
-import Constants._
+import Utils._
 import java.util.Properties
 
 import com.danielasfregola.twitter4s.TwitterStreamingClient
@@ -54,7 +54,6 @@ object TwitterProducer {
             Option(e).foreach(_ => logger.info("Something bad happened", e))
           })
         kafkaProducer.flush()
-        System.exit(0)
     })
   }
 }

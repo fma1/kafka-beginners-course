@@ -3,15 +3,13 @@ package com.github.fma.kafka.project1
 import java.nio.file.{Files, Paths}
 import java.util.Properties
 import java.util.concurrent.Executors
-import java.lang.reflect.Type
 
 import com.danielasfregola.twitter4s.entities.Tweet
-import com.github.fma.kafka.project1.Constants._
-import com.google.gson.{Gson, GsonBuilder}
-import com.google.gson.reflect.TypeToken
+import com.github.fma.kafka.project1.Utils._
 import com.sksamuel.elastic4s.ElasticDsl._
 import com.sksamuel.elastic4s._
 import com.sksamuel.elastic4s.http.{JavaClient, NoOpRequestConfigCallback}
+import com.sksamuel.elastic4s.requests.common.RefreshPolicy
 import com.sksamuel.elastic4s.requests.searches.SearchResponse
 import org.apache.http.auth.{AuthScope, UsernamePasswordCredentials}
 import org.apache.http.impl.client.BasicCredentialsProvider
@@ -23,7 +21,6 @@ import org.elasticsearch.client.RestClientBuilder.HttpClientConfigCallback
 import org.json4s._
 import org.json4s.JObject
 import org.json4s.JsonAST.JString
-import org.json4s.native.Serialization
 import org.json4s.native.Serialization._
 import org.json4s.native.JsonMethods._
 import org.slf4j.{Logger, LoggerFactory}
@@ -37,13 +34,9 @@ import scala.language.postfixOps
 object ElasticSearchConsumer {
   final val logger: Logger = LoggerFactory.getLogger(getClass)
 
-  implicit val formats: DefaultFormats.type = DefaultFormats
-
-  def getCCParams(cc: AnyRef): Map[String, String] =
-    cc.getClass.getDeclaredFields.foldLeft(Map.empty[String, String]) { (a, f) =>
-      f.setAccessible(true)
-      a + (f.getName -> f.get(cc).toString)
-    }
+  implicit val executionContext: ExecutionContextExecutor =
+    ExecutionContext.fromExecutor(Executors.newFixedThreadPool(2))
+  implicit val formats: Formats = DefaultFormats + InstantSerializer
 
   def createElasticClient(): ElasticClient = {
     val elasticJsonString = Files.readAllLines(
@@ -59,9 +52,6 @@ object ElasticSearchConsumer {
 
     ElasticClient(JavaClient(ElasticProperties(ELASTIC_URL), NoOpRequestConfigCallback, httpClientConfigCallback))
   }
-
-  implicit val executionContext: ExecutionContextExecutor =
-    ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor())
 
   def createKafkaConsumer(topic: String): KafkaConsumer[String, String] = {
     val bootstrapServers = "127.0.0.1:9092"
@@ -80,38 +70,29 @@ object ElasticSearchConsumer {
     consumer
   }
 
-  /*
-  scala.sys.addShutdownHook({ logger.info("Caught shutdown hook") })
-
-
-   */
-
   def main(args: Array[String]): Unit = {
     val consumer = createKafkaConsumer(KAFKA_TOPIC)
     val elasticClient = createElasticClient()
 
+    scala.sys.addShutdownHook({ logger.info("Shutdown hook invoked") })
+
+    Future {
       while (true) {
         val records = consumer.poll((100 milliseconds).toJava).asScala
 
         for (record <- records) {
-          println("test1")
-          val myType = new TypeToken[java.util.Map[String, String]]() {}.getType
-          println("test2")
-          val gson = new GsonBuilder().serializeNulls().enableComplexMapKeySerialization().create()
-          println("test3")
-          val tweetMap = gson.fromJson(record.value(), myType).asInstanceOf[java.util.Map[String, String]].asScala
-          println("test4")
-          val tweetId: String = tweetMap("id")
-          println("test5")
+          val tweet: Tweet = parse(record.value()).extract[Tweet]
+          val tweetId: String = tweet.id.toString
+          val tweetMap = getCCParams(tweet)
 
           elasticClient.execute {
             bulk (
               indexInto("twitter").fields(tweetMap)
-            ).refreshImmediately
+            ).refresh(RefreshPolicy.WAIT_FOR)
           }.await
 
           val response: Response[SearchResponse] = elasticClient.execute {
-            search("twitter").matchQuery("id", tweetId)
+            search("twitter").matchQuery("id", tweetId.toString)
           }.await
 
           response match {
@@ -121,11 +102,10 @@ object ElasticSearchConsumer {
             case _ => println("default case")
           }
 
-          System.exit(0)
-
         }
 
       }
+    }
 
   }
 }
