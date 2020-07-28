@@ -23,7 +23,7 @@ object TwitterElasticSearchApp {
     "value.converter.schemas.enable" -> "true",
     "offset.flush.interval.ms" -> "10000",
     "offset.storage.file.filename" -> "/tmp/connect.offsets",
-    "plugin.path" -> "/home/fma1/IdeaProjects/kafka-beginners-course/connectors"
+    "plugin.path" -> "/Users/fma/workspace/kafka-beginners-course/connectors"
   ).asJava
 
   def main(args: Array[String]): Unit = {
